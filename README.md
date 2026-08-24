@@ -80,6 +80,10 @@ python -m factory.cli deliver --brd examples/brd/sample-brd.md \
 # Increment 6: continue through PR, review, policy gate and merge
 python -m factory.cli ship --brd examples/brd/sample-brd.md \
   --meeting examples/meetings/kickoff-transcript.md                      # reaches MERGED
+
+# Increment 7: continue through packaging, deploy, validation and closure
+python -m factory.cli release --brd examples/brd/sample-brd.md \
+  --meeting examples/meetings/kickoff-transcript.md                      # reaches STORY_COMPLETED
 ```
 
 The intake pipeline extracts stable `BR-xx` requirements from the BRD,
@@ -111,6 +115,15 @@ the quality gate thresholds plus review/PR requirements from
 `policies/merge.yaml`, all measured from immutable evidence — and only on a
 PASS decision merges the feature branch into the protected branch with the
 decision file as durable audit evidence.
+
+The release pipeline (Increment 7) packages the merged workspace into a
+reproducible artifact (deterministic tar.gz with a sha256 MANIFEST and the
+source commit), publishes it to an immutable local artifact repository under
+an `artifact://` URI, deploys it to the target environment with a deployment
+descriptor and import smoke tests, runs the packaged functional test suite
+against the deployed artifact, validates every acceptance criterion against
+its test outcome (mandatory pass percentage from `policies/deployment.yaml`),
+and closes stories and requirements in the tracker with full evidence links.
 
 ## Implementation increments
 
