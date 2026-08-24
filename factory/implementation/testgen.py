@@ -11,7 +11,7 @@ from factory.models.requirement import Feature
 from factory.models.story import Story
 
 
-def _ac_slug(ac_id: str) -> str:
+def ac_slug(ac_id: str) -> str:
     return ac_id.lower().replace("-", "_").replace(".", "_")
 
 
@@ -34,7 +34,7 @@ def generate_feature_tests(feature: Feature, stories: list[Story]) -> str:
         func = story_function_name(story.story_id)
         record = generate_synthetic_records(story.story_id, count=1)[0]
         for index, ac in enumerate(story.acceptance_criteria):
-            test_name = f"test_{_ac_slug(ac.ac_id)}"
+            test_name = f"test_{ac_slug(ac.ac_id)}"
             summary = ac.description[:60]
             if index == 0:
                 lines += [

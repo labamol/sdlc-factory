@@ -42,3 +42,9 @@ jobs:
           python -m factory.cli ship --brd examples/brd/sample-brd.md \
             --meeting examples/meetings/kickoff-transcript.md \
             --base-dir "$RUNNER_TEMP/ship"
+      - name: Release pipeline demo
+        run: |
+          mkdir -p "$RUNNER_TEMP/release"
+          python -m factory.cli release --brd examples/brd/sample-brd.md \
+            --meeting examples/meetings/kickoff-transcript.md \
+            --base-dir "$RUNNER_TEMP/release"
