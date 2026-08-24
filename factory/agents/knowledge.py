@@ -1,8 +1,8 @@
 """Knowledge mining agent.
 
 Owns KNOWLEDGE_MINED: ingests the project workspace into the knowledge
-store, builds a versioned context pack for the feature under work and
-records it as evidence with full provenance.
+store, builds a versioned context pack for the feature under work, builds
+the provenance-aware knowledge graph and records both as evidence.
 """
 
 from pathlib import Path
@@ -11,6 +11,10 @@ from factory.agents.base import AgentResult
 from factory.knowledge.context.builder import ContextBuilder, render_pack_md, save_pack
 from factory.knowledge.context.embedding import DeterministicHashEmbedder
 from factory.knowledge.context.store import SqliteKnowledgeStore
+from factory.knowledge.graph.ingest import build_project_graph
+from factory.knowledge.graph.ontology import NodeType
+from factory.knowledge.graph.store import SqliteGraphStore
+from factory.knowledge.graph.traversal import impact, lineage
 from factory.knowledge.ingestion.project import ingest_project
 from factory.models.enums import FactoryState
 from factory.models.evidence import Evidence
@@ -18,6 +22,30 @@ from factory.models.feature import FeatureState
 from factory.orchestrator.events import new_id
 from factory.tools.filesystem import FilesystemTool
 from factory.tools.git import GitError, GitTool
+
+
+def _render_graph_report(graph: SqliteGraphStore) -> str:
+    node_count, edge_count = graph.counts()
+    lines = [
+        "# Knowledge Graph",
+        "",
+        f"- nodes: {node_count}",
+        f"- edges: {edge_count}",
+        "",
+        "## Requirement impact (downstream) and lineage anchors",
+        "",
+    ]
+    for req in graph.nodes_by_type(NodeType.REQUIREMENT):
+        downstream = impact(graph, req.node_id)
+        lines.append(f"### {req.node_id}: {req.label}")
+        lines.append(f"impact ({len(downstream)}): {', '.join(downstream) or 'none'}")
+        lines.append("")
+    for ac in graph.nodes_by_type(NodeType.ACCEPTANCE_CRITERION)[:3]:
+        upstream = lineage(graph, ac.node_id)
+        lines.append(f"### lineage of {ac.node_id}")
+        lines.append(f"upstream: {', '.join(upstream) or 'none'}")
+        lines.append("")
+    return "\n".join(lines)
 
 
 class KnowledgeAgent:
@@ -64,6 +92,14 @@ class KnowledgeAgent:
         pack_path = save_pack(pack, self.project_dir / "context" / "packs")
         md_path = self.fs.write_text("specs/context-pack.md", render_pack_md(pack))
 
+        graph = SqliteGraphStore(self.project_dir / "context" / "graph.db")
+        try:
+            node_count, edge_count = build_project_graph(self.project_dir, graph)
+            report = _render_graph_report(graph)
+        finally:
+            graph.close()
+        report_path = self.fs.write_text("specs/knowledge-graph.md", report)
+
         def evidence(kind: str, ref: str, summary: str) -> Evidence:
             return Evidence(
                 evidence_id=new_id("EVD"), stage=stage.value, kind=kind, ref=ref,
@@ -78,6 +114,10 @@ class KnowledgeAgent:
             evidence=[
                 evidence("context-pack", str(pack_path), "Versioned context pack"),
                 evidence("context-pack-md", str(md_path), "Rendered context pack"),
+                evidence(
+                    "knowledge-graph", str(report_path),
+                    f"Graph: {node_count} nodes, {edge_count} edges",
+                ),
             ],
             skill="knowledge/context-pack-building",
         )
