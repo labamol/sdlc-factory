@@ -67,7 +67,20 @@ and human escalation condition.
 uv venv && uv pip install -e ".[dev]"
 pytest
 python -m factory.cli demo   # traverse one mocked feature end-to-end with evidence
+
+# Increment 2: run a real BRD through requirements -> clarification -> spec
+python -m factory.cli intake --brd examples/brd/sample-brd.md            # pauses at HUMAN_INPUT
+python -m factory.cli intake --brd examples/brd/sample-brd.md \
+  --meeting examples/meetings/kickoff-transcript.md                      # reaches SPECIFIED
 ```
+
+The intake pipeline extracts stable `BR-xx` requirements from the BRD,
+classifies ambiguity (blocking / material-but-assumable / implementation
+detail), records explicit assumptions, normalizes meeting transcripts into
+decision records with provenance, pauses on blocking ambiguity for human
+input, decomposes into features/stories/acceptance criteria with a full
+traceability map, and runs the Spec Kit lifecycle (specify -> clarify ->
+plan -> tasks -> analyze) with Git-versioned spec artifacts per feature.
 
 ## Implementation increments
 

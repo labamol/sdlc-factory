@@ -2,14 +2,25 @@
 
 `sdlc-factory demo` traverses one mocked feature through the full lifecycle,
 persisting typed state, transitions, executions, evidence and audit events.
+
+`sdlc-factory intake` runs the real Increment 2 pipeline: BRD -> requirements
+-> clarification/assumptions (pausing on blocking ambiguity for human input)
+-> decomposition -> Spec Kit specification, versioned in Git.
 """
 
 import argparse
 import asyncio
+import shutil
 import sys
 from pathlib import Path
 
+import yaml
+
+from factory.agents.hitl import HitlGateAgent
 from factory.agents.mocked import build_mocked_agents
+from factory.agents.product import ProductAgent
+from factory.agents.requirements import RequirementsAgent
+from factory.agents.specification import SpecificationAgent
 from factory.models.enums import FactoryState
 from factory.models.feature import FeatureState
 from factory.orchestrator.engine import OrchestratorEngine
@@ -18,6 +29,7 @@ from factory.orchestrator.state_machine import STATE_MACHINE
 from factory.orchestrator.store import FileStateStore
 from factory.policy.engine import PolicyEngine
 from factory.policy.quality_gate import QualityEvidence, QualityGate
+from factory.tools.git import GitTool
 
 HAPPY_PATH: list[FactoryState] = [
     FactoryState.INTAKE,
@@ -96,16 +108,104 @@ async def run_demo(base_dir: Path, project_id: str = "PRJ-DEMO") -> FeatureState
     return feature
 
 
+async def run_intake(
+    base_dir: Path,
+    brd: Path,
+    meetings: list[Path],
+    project_id: str = "PRJ-INTAKE",
+) -> FeatureState:
+    projects_dir = base_dir / "projects"
+    project_dir = projects_dir / project_id
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    (project_dir / "intake").mkdir(exist_ok=True)
+    shutil.copy(brd, project_dir / "intake" / "brd.md")
+    if meetings:
+        (project_dir / "intake" / "meetings").mkdir(exist_ok=True)
+        for meeting in meetings:
+            shutil.copy(meeting, project_dir / "intake" / "meetings" / meeting.name)
+
+    git = GitTool(project_dir)
+    if not git.is_repo():
+        git.init()
+        git.configure_identity("sdlc-factory", "factory@localhost")
+
+    store = FileStateStore(projects_dir)
+    events = EventBus([JsonlEventSink(project_dir / "execution" / "events.jsonl")])
+    agents = build_mocked_agents(project_dir)
+    agents["requirements-agent"] = RequirementsAgent(project_dir)
+    agents["product-agent"] = ProductAgent(project_dir)
+    agents["specification-agent"] = SpecificationAgent(project_dir)
+    agents["orchestrator"] = HitlGateAgent(project_dir)
+    engine = OrchestratorEngine(
+        state_machine=STATE_MACHINE, store=store, events=events, agents=agents
+    )
+
+    feature = FeatureState(
+        feature_id="FEAT-000",
+        project_id=project_id,
+        title=f"BRD intake for {brd.name}",
+    )
+    store.save_feature(feature)
+
+    feature = await engine.advance(feature, FactoryState.INTAKE)
+    feature = await engine.advance(feature, FactoryState.CLARIFICATION)
+
+    clarifications = yaml.safe_load(
+        (project_dir / "requirements" / "clarifications.yaml").read_text()
+    ) or []
+    blocking_open = [
+        c for c in clarifications
+        if c["ambiguity_class"] == "BLOCKING" and c["status"] == "OPEN"
+    ]
+    if blocking_open:
+        feature = await engine.advance(feature, FactoryState.HUMAN_INPUT)
+        print(f"Feature {feature.feature_id} paused in state: {feature.current_state.value}")
+        print(f"Blocking clarifications: {len(blocking_open)}")
+        print(f"HITL request: {project_dir / 'hitl' / 'clarification-request.md'}")
+        return feature
+
+    for target in (
+        FactoryState.REQUIREMENTS_READY,
+        FactoryState.DECOMPOSED,
+        FactoryState.SPECIFIED,
+    ):
+        feature = await engine.advance(feature, target)
+
+    print(f"Feature {feature.feature_id} finished in state: {feature.current_state.value}")
+    print(f"Requirements: {len(feature.requirements)}")
+    print(f"Stories: {len(feature.stories)}  ACs: {len(feature.acceptance_criteria)}")
+    print(f"Spec version: {feature.spec_version}")
+    for transition in store.transitions_for(feature.feature_id):
+        print(f"  {transition.from_state.value} -> {transition.to_state.value} "
+              f"[{transition.agent}]")
+    return feature
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sdlc-factory")
     sub = parser.add_subparsers(dest="command", required=True)
     demo = sub.add_parser("demo", help="Traverse one mocked feature end-to-end with evidence")
     demo.add_argument("--base-dir", type=Path, default=Path.cwd())
+    intake = sub.add_parser(
+        "intake", help="Run a BRD through requirements, clarification and specification"
+    )
+    intake.add_argument("--brd", type=Path, required=True)
+    intake.add_argument("--meeting", type=Path, action="append", default=[])
+    intake.add_argument("--base-dir", type=Path, default=Path.cwd())
+    intake.add_argument("--project-id", default="PRJ-INTAKE")
     args = parser.parse_args(argv)
 
     if args.command == "demo":
         feature = asyncio.run(run_demo(args.base_dir))
         return 0 if feature.current_state == FactoryState.LEARNED else 1
+    if args.command == "intake":
+        feature = asyncio.run(
+            run_intake(args.base_dir, args.brd, args.meeting, args.project_id)
+        )
+        if feature.current_state == FactoryState.SPECIFIED:
+            return 0
+        return 3 if feature.current_state == FactoryState.HUMAN_INPUT else 1
     return 2
 
 
