@@ -18,6 +18,13 @@ coverage review, the merge policy gate and the protected-branch merge
 `sdlc-factory release` continues through packaging, publishing, deployment
 with smoke tests, functional testing against the deployed artifact,
 acceptance-criteria validation and tracker closure (STORY_COMPLETED).
+
+`sdlc-factory learn` runs the full lifecycle including episodic learning and
+governed promotion proposals (LEARNED).
+
+`sdlc-factory heal` demonstrates bounded self-healing: it injects a defect
+into the generated implementation after BUILT, lets unit testing fail, then
+diagnoses, repairs and retests within the policy budget.
 """
 
 import argparse
@@ -32,14 +39,18 @@ from factory.agents.design import DesignAgent
 from factory.agents.governance import OrchestratorGateAgent
 from factory.agents.implementation import ImplementationAgent
 from factory.agents.knowledge import KnowledgeAgent
+from factory.agents.learning import LearningAgent
 from factory.agents.mocked import build_mocked_agents
 from factory.agents.product import ProductAgent
 from factory.agents.release import ReleaseAgent
 from factory.agents.requirements import RequirementsAgent
 from factory.agents.review import ReviewAgent
+from factory.agents.selfheal import SelfHealAgent
 from factory.agents.specification import SpecificationAgent
 from factory.agents.testeng import TestEngineeringAgent
 from factory.agents.validation import ValidationAgent
+from factory.healing.loop import run_self_heal
+from factory.healing.memory import EpisodicMemory
 from factory.models.enums import FactoryState
 from factory.models.feature import FeatureState
 from factory.orchestrator.engine import OrchestratorEngine
@@ -170,6 +181,8 @@ async def run_intake(
     deliver: bool = False,
     ship: bool = False,
     release: bool = False,
+    learn: bool = False,
+    heal_demo: bool = False,
 ) -> FeatureState:
     projects_dir = base_dir / "projects"
     project_dir = projects_dir / project_id
@@ -201,6 +214,8 @@ async def run_intake(
     agents["orchestrator"] = OrchestratorGateAgent(project_dir, _policies_dir(base_dir))
     agents["release-agent"] = ReleaseAgent(project_dir)
     agents["validation-agent"] = ValidationAgent(project_dir, _policies_dir(base_dir))
+    agents["self-heal-agent"] = SelfHealAgent(project_dir, _policies_dir(base_dir))
+    agents["learning-agent"] = LearningAgent(project_dir, _policies_dir(base_dir))
     engine = OrchestratorEngine(
         state_machine=STATE_MACHINE, store=store, events=events, agents=agents
     )
@@ -235,14 +250,34 @@ async def run_intake(
         FactoryState.SPECIFIED,
         FactoryState.KNOWLEDGE_MINED,
     ]
-    if deliver or ship or release:
+    if heal_demo:
+        targets += [s for s in DELIVER_STATES if s != FactoryState.UNIT_TESTED]
+    elif deliver or ship or release or learn:
         targets += list(DELIVER_STATES)
-    if ship or release:
+    if ship or release or learn:
         targets += list(SHIP_STATES)
-    if release:
+    if release or learn:
         targets += list(RELEASE_STATES)
+    if learn:
+        targets.append(FactoryState.LEARNED)
     for target in targets:
         feature = await engine.advance(feature, target)
+
+    if heal_demo and feature.current_state == FactoryState.BUILT:
+        module = next((project_dir / "workspace" / "src").glob("*.py"))
+        module.write_text(
+            module.read_text(encoding="utf-8")
+            + '\nraise RuntimeError("injected template regression")\n',
+            encoding="utf-8",
+        )
+        print(f"Injected defect into {module.name}")
+        feature = await engine.advance(feature, FactoryState.UNIT_TESTED)
+        if feature.current_state == FactoryState.DIAGNOSE:
+            feature = await run_self_heal(engine, feature, project_dir)
+        episodes = EpisodicMemory(project_dir).all()
+        for episode in episodes:
+            print(f"Episode {episode.episode_id}: {episode.failure_class} "
+                  f"-> {episode.repair_action} [{episode.outcome}]")
 
     print(f"Feature {feature.feature_id} finished in state: {feature.current_state.value}")
     print(f"Requirements: {len(feature.requirements)}")
@@ -254,9 +289,11 @@ async def run_intake(
     if ship or release:
         print(f"Pull request: #{feature.pull_request}")
         print(f"Coverage: {feature.coverage}")
-    if release:
+    if release or learn:
         print(f"Deployed to: {feature.deployment_environment}")
         print(f"Functional tests: {feature.functional_test_status.value}")
+    if heal_demo:
+        print(f"Unit tests after healing: {feature.unit_test_status.value}")
     for transition in store.transitions_for(feature.feature_id):
         print(f"  {transition.from_state.value} -> {transition.to_state.value} "
               f"[{transition.agent}]")
@@ -296,6 +333,20 @@ def main(argv: list[str] | None = None) -> int:
     release.add_argument("--meeting", type=Path, action="append", default=[])
     release.add_argument("--base-dir", type=Path, default=Path.cwd())
     release.add_argument("--project-id", default="PRJ-RELEASE")
+    learn = sub.add_parser(
+        "learn", help="Run the full lifecycle through episodic learning (LEARNED)"
+    )
+    learn.add_argument("--brd", type=Path, required=True)
+    learn.add_argument("--meeting", type=Path, action="append", default=[])
+    learn.add_argument("--base-dir", type=Path, default=Path.cwd())
+    learn.add_argument("--project-id", default="PRJ-LEARN")
+    heal = sub.add_parser(
+        "heal", help="Demonstrate bounded self-healing from an injected defect"
+    )
+    heal.add_argument("--brd", type=Path, required=True)
+    heal.add_argument("--meeting", type=Path, action="append", default=[])
+    heal.add_argument("--base-dir", type=Path, default=Path.cwd())
+    heal.add_argument("--project-id", default="PRJ-HEAL")
     args = parser.parse_args(argv)
 
     if args.command == "demo":
@@ -335,6 +386,22 @@ def main(argv: list[str] | None = None) -> int:
         if feature.current_state == FactoryState.STORY_COMPLETED:
             return 0
         return 3 if feature.current_state == FactoryState.HUMAN_INPUT else 1
+    if args.command == "learn":
+        feature = asyncio.run(
+            run_intake(
+                args.base_dir, args.brd, args.meeting, args.project_id, learn=True
+            )
+        )
+        if feature.current_state == FactoryState.LEARNED:
+            return 0
+        return 3 if feature.current_state == FactoryState.HUMAN_INPUT else 1
+    if args.command == "heal":
+        feature = asyncio.run(
+            run_intake(
+                args.base_dir, args.brd, args.meeting, args.project_id, heal_demo=True
+            )
+        )
+        return 0 if feature.current_state == FactoryState.UNIT_TESTED else 1
     return 2
 
 

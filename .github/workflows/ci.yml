@@ -48,3 +48,15 @@ jobs:
           python -m factory.cli release --brd examples/brd/sample-brd.md \
             --meeting examples/meetings/kickoff-transcript.md \
             --base-dir "$RUNNER_TEMP/release"
+      - name: Learning pipeline demo
+        run: |
+          mkdir -p "$RUNNER_TEMP/learn"
+          python -m factory.cli learn --brd examples/brd/sample-brd.md \
+            --meeting examples/meetings/kickoff-transcript.md \
+            --base-dir "$RUNNER_TEMP/learn"
+      - name: Self-heal demo
+        run: |
+          mkdir -p "$RUNNER_TEMP/heal"
+          python -m factory.cli heal --brd examples/brd/sample-brd.md \
+            --meeting examples/meetings/kickoff-transcript.md \
+            --base-dir "$RUNNER_TEMP/heal"

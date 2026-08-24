@@ -116,13 +116,22 @@ _TRANSITIONS: list[TransitionSpec] = [
         expected_artifacts=["failure-classification"],
     ),
     TransitionSpec(
-        from_state=S.DIAGNOSE, to_state=S.RETEST, agent="implementation-agent",
+        from_state=S.DIAGNOSE, to_state=S.RETEST, agent="self-heal-agent",
         allowed_tools=["git", "filesystem", "terminal", "pytest"],
+        expected_artifacts=["diagnosis", "repair"],
         retry_route=S.DIAGNOSE,
     ),
     TransitionSpec(
         from_state=S.RETEST, to_state=S.UNIT_TESTED, agent="test-agent",
-        allowed_tools=["pytest", "terminal"],
+        allowed_tools=["pytest", "terminal"], retry_route=S.DIAGNOSE,
+    ),
+    TransitionSpec(
+        from_state=S.BUILT, to_state=S.DIAGNOSE, agent="self-heal-agent",
+        allowed_tools=["filesystem"],
+    ),
+    TransitionSpec(
+        from_state=S.RETEST, to_state=S.DIAGNOSE, agent="self-heal-agent",
+        allowed_tools=["filesystem"],
     ),
     TransitionSpec(
         from_state=S.UNIT_TESTED, to_state=S.PR_CREATED, agent="review-agent",
