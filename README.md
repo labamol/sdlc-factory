@@ -76,6 +76,10 @@ python -m factory.cli intake --brd examples/brd/sample-brd.md \
 # Increment 5: continue into design, implementation and unit testing
 python -m factory.cli deliver --brd examples/brd/sample-brd.md \
   --meeting examples/meetings/kickoff-transcript.md                      # reaches UNIT_TESTED
+
+# Increment 6: continue through PR, review, policy gate and merge
+python -m factory.cli ship --brd examples/brd/sample-brd.md \
+  --meeting examples/meetings/kickoff-transcript.md                      # reaches MERGED
 ```
 
 The intake pipeline extracts stable `BR-xx` requirements from the BRD,
@@ -98,6 +102,15 @@ pytest test per acceptance criterion, seeded synthetic fixtures — never real
 data), generates the implementation on a feature branch, and runs pre-PR
 quality checks (formatting, build, security scan, tests, spec compliance,
 coverage) plus the full unit-test suite with durable evidence reports.
+
+The shipping pipeline (Increment 6) commits the implementation on its feature
+branch and opens a PR record, runs a four-dimensional review (code quality,
+security, spec compliance, coverage) with explainable findings and an
+APPROVED / CHANGES_REQUESTED verdict, then evaluates the merge policy gate —
+the quality gate thresholds plus review/PR requirements from
+`policies/merge.yaml`, all measured from immutable evidence — and only on a
+PASS decision merges the feature branch into the protected branch with the
+decision file as durable audit evidence.
 
 ## Implementation increments
 
