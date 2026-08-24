@@ -10,3 +10,5 @@ build/
 .coverage
 coverage.xml
 projects/*/execution/
+ui/node_modules/
+ui/dist/

@@ -92,6 +92,10 @@ python -m factory.cli learn --brd examples/brd/sample-brd.md \
 # Increment 8: bounded self-healing from an injected defect
 python -m factory.cli heal --brd examples/brd/sample-brd.md \
   --meeting examples/meetings/kickoff-transcript.md                      # DIAGNOSE -> RETEST -> UNIT_TESTED
+
+# Increment 9: observability API + dashboard over the durable records
+uv pip install -e ".[dev,observability]"
+python -m factory.cli dashboard                                          # http://127.0.0.1:8600
 ```
 
 The intake pipeline extracts stable `BR-xx` requirements from the BRD,
@@ -145,6 +149,19 @@ promotion candidates from recurring successful repairs; candidates stay
 PROPOSED until a named human approves them per `policies/learning.yaml` —
 skills and templates are never mutated automatically.
 
+Observability (Increment 9) derives everything from the immutable durable
+records — feature state files, transition/execution JSONL logs, the audit
+event stream and stage artifacts — never from agent-generated summaries. A
+FastAPI service exposes projects, feature run timelines, executions, event
+logs, engineering KPIs (autonomous completion, AC-to-test coverage, PR
+first-pass, self-heal success), quality-gate results (threshold + actual +
+evidence + decision) and self-healing episodes, plus a Server-Sent-Events
+stream that tails `execution/events.jsonl` for live run monitoring. The
+React dashboard under `ui/` (Vite + TypeScript) renders the overview KPIs,
+per-project feature/quality/healing views and the per-feature state-machine
+timeline with the live event stream; `npm run build` in `ui/` produces
+`ui/dist`, which the service serves at the root.
+
 ## Implementation increments
 
 1. **Control plane** — typed state, state machine, Git/file tools, policy skeleton, audit events.
@@ -155,3 +172,4 @@ skills and templates are never mutated automatically.
 6. **PR + merge** — PR creation, code/spec/security/coverage review, merge policy.
 7. **Release + validation** — package, artifact repo, deploy, smoke/functional/regression.
 8. **Self-heal + learning** — failure taxonomy, bounded repair, episodic memory, promotion.
+9. **Observability** — read-only KPI/quality/healing APIs, SSE live stream, React dashboard.
