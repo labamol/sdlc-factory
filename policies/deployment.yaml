@@ -1,0 +1,16 @@
+version: 1
+deployment_policy:
+  environments:
+    local:
+      autonomous: true
+    container:
+      autonomous: true
+    vm:
+      autonomous: true
+    production:
+      autonomous: false
+      require_human_approval: true
+  require_smoke_tests: true
+  mandatory_ac_pass_percentage: 100
+  max_blocker_defects: 0
+  max_unexpected_regressions: 0
