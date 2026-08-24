@@ -72,6 +72,10 @@ python -m factory.cli demo   # traverse one mocked feature end-to-end with evide
 python -m factory.cli intake --brd examples/brd/sample-brd.md            # pauses at HUMAN_INPUT
 python -m factory.cli intake --brd examples/brd/sample-brd.md \
   --meeting examples/meetings/kickoff-transcript.md                      # reaches KNOWLEDGE_MINED
+
+# Increment 5: continue into design, implementation and unit testing
+python -m factory.cli deliver --brd examples/brd/sample-brd.md \
+  --meeting examples/meetings/kickoff-transcript.md                      # reaches UNIT_TESTED
 ```
 
 The intake pipeline extracts stable `BR-xx` requirements from the BRD,
@@ -86,6 +90,14 @@ Knowledge mining then ingests all project artifacts into the knowledge store
 and builds a versioned context pack: vector + exact retrieval, superseded-version
 exclusion, authority-based conflict resolution, reranking and token budgeting,
 with per-item provenance (source, authority, version, repo commit).
+
+The delivery pipeline (Increment 5) designs the technical solution, assigns
+each feature to a specialized worker profile (Python service / React frontend /
+data), generates task breakdowns, designs tests before implementation (one
+pytest test per acceptance criterion, seeded synthetic fixtures — never real
+data), generates the implementation on a feature branch, and runs pre-PR
+quality checks (formatting, build, security scan, tests, spec compliance,
+coverage) plus the full unit-test suite with durable evidence reports.
 
 ## Implementation increments
 
