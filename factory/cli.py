@@ -17,6 +17,7 @@ from pathlib import Path
 import yaml
 
 from factory.agents.hitl import HitlGateAgent
+from factory.agents.knowledge import KnowledgeAgent
 from factory.agents.mocked import build_mocked_agents
 from factory.agents.product import ProductAgent
 from factory.agents.requirements import RequirementsAgent
@@ -136,6 +137,7 @@ async def run_intake(
     agents["requirements-agent"] = RequirementsAgent(project_dir)
     agents["product-agent"] = ProductAgent(project_dir)
     agents["specification-agent"] = SpecificationAgent(project_dir)
+    agents["knowledge-agent"] = KnowledgeAgent(project_dir)
     agents["orchestrator"] = HitlGateAgent(project_dir)
     engine = OrchestratorEngine(
         state_machine=STATE_MACHINE, store=store, events=events, agents=agents
@@ -169,6 +171,7 @@ async def run_intake(
         FactoryState.REQUIREMENTS_READY,
         FactoryState.DECOMPOSED,
         FactoryState.SPECIFIED,
+        FactoryState.KNOWLEDGE_MINED,
     ):
         feature = await engine.advance(feature, target)
 
@@ -203,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
         feature = asyncio.run(
             run_intake(args.base_dir, args.brd, args.meeting, args.project_id)
         )
-        if feature.current_state == FactoryState.SPECIFIED:
+        if feature.current_state == FactoryState.KNOWLEDGE_MINED:
             return 0
         return 3 if feature.current_state == FactoryState.HUMAN_INPUT else 1
     return 2

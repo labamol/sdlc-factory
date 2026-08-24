@@ -1,4 +1,4 @@
-"""Factory tests for the Increment 2 intake pipeline (BRD -> SPECIFIED)."""
+"""Factory tests for the intake pipeline (BRD -> ... -> KNOWLEDGE_MINED)."""
 
 import subprocess
 from pathlib import Path
@@ -33,9 +33,9 @@ async def test_blocking_ambiguity_pauses_at_human_input(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_meeting_decisions_unblock_and_reach_specified(tmp_path):
+async def test_meeting_decisions_unblock_and_reach_knowledge_mined(tmp_path):
     feature = await run_intake(tmp_path, BRD, [TRANSCRIPT], project_id="PRJ-T2")
-    assert feature.current_state == FactoryState.SPECIFIED
+    assert feature.current_state == FactoryState.KNOWLEDGE_MINED
     assert feature.spec_version == "v1"
     assert len(feature.requirements) == 8
     assert feature.stories and feature.acceptance_criteria
@@ -89,4 +89,25 @@ async def test_intake_events_and_transitions_are_recorded(tmp_path):
     types = {e.event_type for e in events}
     assert {"AGENT_EXECUTION_STARTED", "AGENT_EXECUTION_COMPLETED", "STATE_TRANSITION"} <= types
     stages = {e.stage for e in events if e.event_type == "STATE_TRANSITION"}
-    assert {"INTAKE", "CLARIFICATION", "REQUIREMENTS_READY", "DECOMPOSED", "SPECIFIED"} <= stages
+    assert {
+        "INTAKE", "CLARIFICATION", "REQUIREMENTS_READY",
+        "DECOMPOSED", "SPECIFIED", "KNOWLEDGE_MINED",
+    } <= stages
+
+
+@pytest.mark.asyncio
+async def test_context_pack_produced_with_provenance(tmp_path):
+    await run_intake(tmp_path, BRD, [TRANSCRIPT], project_id="PRJ-T5")
+    project_dir = tmp_path / "projects" / "PRJ-T5"
+
+    packs = list((project_dir / "context" / "packs").glob("PACK-*.yaml"))
+    assert len(packs) == 1
+    pack = yaml.safe_load(packs[0].read_text())
+    assert pack["used_tokens"] <= pack["budget_tokens"]
+    assert pack["items"], "context pack should contain items"
+    for scored in pack["items"]:
+        item = scored["item"]
+        assert item["source"] and item["authority"] and item["version"]
+
+    rendered = (project_dir / "specs" / "context-pack.md").read_text()
+    assert "Context Pack" in rendered
