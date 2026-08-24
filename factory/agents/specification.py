@@ -33,6 +33,8 @@ class SpecificationAgent:
         return yaml.safe_load(self.fs.read_text(relative)) or []
 
     async def execute(self, feature: FeatureState, stage: FactoryState) -> AgentResult:
+        if stage == FactoryState.TASKS_READY:
+            return await self._prepare_tasks(stage)
         if stage != FactoryState.SPECIFIED:
             return AgentResult(status="FAILURE", summary=f"Unsupported stage {stage.value}")
 
@@ -78,5 +80,37 @@ class SpecificationAgent:
             summary=f"Specified {len(features)} feature(s) at {spec_version}",
             evidence=evidence,
             state_updates={"spec_version": spec_version},
+            skill="specification/spec-kit-lifecycle",
+        )
+
+    async def _prepare_tasks(self, stage: FactoryState) -> AgentResult:
+        """Consolidate per-feature Spec Kit tasks into one ordered task list."""
+        features = [Feature.model_validate(f) for f in self._load("backlog/features.yaml")]
+        stories = [Story.model_validate(s) for s in self._load("backlog/stories.yaml")]
+        if not features:
+            return AgentResult(status="FAILURE", summary="No features for task preparation")
+
+        tasks = []
+        for feat in features:
+            for story in (s for s in stories if s.feature_id == feat.feature_id):
+                tasks.append(
+                    {
+                        "task_id": f"TASK-{story.story_id.removeprefix('STORY-')}",
+                        "feature_id": feat.feature_id,
+                        "story_id": story.story_id,
+                        "title": story.title,
+                        "acceptance_criteria": [ac.ac_id for ac in story.acceptance_criteria],
+                        "status": "READY",
+                    }
+                )
+        path = self.fs.write_text("design/tasks.yaml", yaml.safe_dump(tasks, sort_keys=False))
+        return AgentResult(
+            summary=f"{len(tasks)} implementation task(s) ready",
+            evidence=[
+                Evidence(
+                    evidence_id=new_id("EVD"), stage=stage.value, kind="tasks",
+                    ref=str(path), summary=f"{len(tasks)} ordered tasks",
+                )
+            ],
             skill="specification/spec-kit-lifecycle",
         )

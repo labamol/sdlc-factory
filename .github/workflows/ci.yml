@@ -30,3 +30,15 @@ jobs:
           python -m factory.cli intake --brd examples/brd/sample-brd.md \
             --meeting examples/meetings/kickoff-transcript.md \
             --base-dir "$RUNNER_TEMP/intake"
+      - name: Delivery pipeline demo
+        run: |
+          mkdir -p "$RUNNER_TEMP/deliver"
+          python -m factory.cli deliver --brd examples/brd/sample-brd.md \
+            --meeting examples/meetings/kickoff-transcript.md \
+            --base-dir "$RUNNER_TEMP/deliver"
+      - name: Ship pipeline demo
+        run: |
+          mkdir -p "$RUNNER_TEMP/ship"
+          python -m factory.cli ship --brd examples/brd/sample-brd.md \
+            --meeting examples/meetings/kickoff-transcript.md \
+            --base-dir "$RUNNER_TEMP/ship"

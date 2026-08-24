@@ -72,6 +72,14 @@ python -m factory.cli demo   # traverse one mocked feature end-to-end with evide
 python -m factory.cli intake --brd examples/brd/sample-brd.md            # pauses at HUMAN_INPUT
 python -m factory.cli intake --brd examples/brd/sample-brd.md \
   --meeting examples/meetings/kickoff-transcript.md                      # reaches KNOWLEDGE_MINED
+
+# Increment 5: continue into design, implementation and unit testing
+python -m factory.cli deliver --brd examples/brd/sample-brd.md \
+  --meeting examples/meetings/kickoff-transcript.md                      # reaches UNIT_TESTED
+
+# Increment 6: continue through PR, review, policy gate and merge
+python -m factory.cli ship --brd examples/brd/sample-brd.md \
+  --meeting examples/meetings/kickoff-transcript.md                      # reaches MERGED
 ```
 
 The intake pipeline extracts stable `BR-xx` requirements from the BRD,
@@ -86,6 +94,23 @@ Knowledge mining then ingests all project artifacts into the knowledge store
 and builds a versioned context pack: vector + exact retrieval, superseded-version
 exclusion, authority-based conflict resolution, reranking and token budgeting,
 with per-item provenance (source, authority, version, repo commit).
+
+The delivery pipeline (Increment 5) designs the technical solution, assigns
+each feature to a specialized worker profile (Python service / React frontend /
+data), generates task breakdowns, designs tests before implementation (one
+pytest test per acceptance criterion, seeded synthetic fixtures — never real
+data), generates the implementation on a feature branch, and runs pre-PR
+quality checks (formatting, build, security scan, tests, spec compliance,
+coverage) plus the full unit-test suite with durable evidence reports.
+
+The shipping pipeline (Increment 6) commits the implementation on its feature
+branch and opens a PR record, runs a four-dimensional review (code quality,
+security, spec compliance, coverage) with explainable findings and an
+APPROVED / CHANGES_REQUESTED verdict, then evaluates the merge policy gate —
+the quality gate thresholds plus review/PR requirements from
+`policies/merge.yaml`, all measured from immutable evidence — and only on a
+PASS decision merges the feature branch into the protected branch with the
+decision file as durable audit evidence.
 
 ## Implementation increments
 

@@ -6,6 +6,14 @@ persisting typed state, transitions, executions, evidence and audit events.
 `sdlc-factory intake` runs the real Increment 2 pipeline: BRD -> requirements
 -> clarification/assumptions (pausing on blocking ambiguity for human input)
 -> decomposition -> Spec Kit specification, versioned in Git.
+
+`sdlc-factory deliver` continues past knowledge mining into design, test
+design, implementation by worker profiles, pre-PR quality checks and unit
+test execution (UNIT_TESTED).
+
+`sdlc-factory ship` continues through PR creation, code/security/spec/
+coverage review, the merge policy gate and the protected-branch merge
+(MERGED).
 """
 
 import argparse
@@ -16,12 +24,16 @@ from pathlib import Path
 
 import yaml
 
-from factory.agents.hitl import HitlGateAgent
+from factory.agents.design import DesignAgent
+from factory.agents.governance import OrchestratorGateAgent
+from factory.agents.implementation import ImplementationAgent
 from factory.agents.knowledge import KnowledgeAgent
 from factory.agents.mocked import build_mocked_agents
 from factory.agents.product import ProductAgent
 from factory.agents.requirements import RequirementsAgent
+from factory.agents.review import ReviewAgent
 from factory.agents.specification import SpecificationAgent
+from factory.agents.testeng import TestEngineeringAgent
 from factory.models.enums import FactoryState
 from factory.models.feature import FeatureState
 from factory.orchestrator.engine import OrchestratorEngine
@@ -109,11 +121,39 @@ async def run_demo(base_dir: Path, project_id: str = "PRJ-DEMO") -> FeatureState
     return feature
 
 
+DELIVER_STATES: tuple[FactoryState, ...] = (
+    FactoryState.DESIGNED,
+    FactoryState.TASKS_READY,
+    FactoryState.TEST_DESIGNED,
+    FactoryState.IMPLEMENTING,
+    FactoryState.BUILT,
+    FactoryState.UNIT_TESTED,
+)
+
+SHIP_STATES: tuple[FactoryState, ...] = (
+    FactoryState.PR_CREATED,
+    FactoryState.REVIEWED,
+    FactoryState.MERGE_READY,
+    FactoryState.POLICY_GATE,
+    FactoryState.MERGED,
+)
+
+DEFAULT_POLICIES_DIR = Path(__file__).resolve().parents[1] / "policies"
+
+
+def _policies_dir(base_dir: Path) -> Path:
+    candidate = base_dir / "policies"
+    return candidate if candidate.exists() else DEFAULT_POLICIES_DIR
+
+
 async def run_intake(
     base_dir: Path,
     brd: Path,
     meetings: list[Path],
     project_id: str = "PRJ-INTAKE",
+    *,
+    deliver: bool = False,
+    ship: bool = False,
 ) -> FeatureState:
     projects_dir = base_dir / "projects"
     project_dir = projects_dir / project_id
@@ -138,7 +178,11 @@ async def run_intake(
     agents["product-agent"] = ProductAgent(project_dir)
     agents["specification-agent"] = SpecificationAgent(project_dir)
     agents["knowledge-agent"] = KnowledgeAgent(project_dir)
-    agents["orchestrator"] = HitlGateAgent(project_dir)
+    agents["design-agent"] = DesignAgent(project_dir)
+    agents["test-agent"] = TestEngineeringAgent(project_dir)
+    agents["implementation-agent"] = ImplementationAgent(project_dir)
+    agents["review-agent"] = ReviewAgent(project_dir)
+    agents["orchestrator"] = OrchestratorGateAgent(project_dir, _policies_dir(base_dir))
     engine = OrchestratorEngine(
         state_machine=STATE_MACHINE, store=store, events=events, agents=agents
     )
@@ -167,18 +211,29 @@ async def run_intake(
         print(f"HITL request: {project_dir / 'hitl' / 'clarification-request.md'}")
         return feature
 
-    for target in (
+    targets: list[FactoryState] = [
         FactoryState.REQUIREMENTS_READY,
         FactoryState.DECOMPOSED,
         FactoryState.SPECIFIED,
         FactoryState.KNOWLEDGE_MINED,
-    ):
+    ]
+    if deliver or ship:
+        targets += list(DELIVER_STATES)
+    if ship:
+        targets += list(SHIP_STATES)
+    for target in targets:
         feature = await engine.advance(feature, target)
 
     print(f"Feature {feature.feature_id} finished in state: {feature.current_state.value}")
     print(f"Requirements: {len(feature.requirements)}")
     print(f"Stories: {len(feature.stories)}  ACs: {len(feature.acceptance_criteria)}")
     print(f"Spec version: {feature.spec_version}")
+    if deliver or ship:
+        print(f"Branch: {feature.branch}")
+        print(f"Unit tests: {feature.unit_test_status.value}")
+    if ship:
+        print(f"Pull request: #{feature.pull_request}")
+        print(f"Coverage: {feature.coverage}")
     for transition in store.transitions_for(feature.feature_id):
         print(f"  {transition.from_state.value} -> {transition.to_state.value} "
               f"[{transition.agent}]")
@@ -197,6 +252,20 @@ def main(argv: list[str] | None = None) -> int:
     intake.add_argument("--meeting", type=Path, action="append", default=[])
     intake.add_argument("--base-dir", type=Path, default=Path.cwd())
     intake.add_argument("--project-id", default="PRJ-INTAKE")
+    deliver = sub.add_parser(
+        "deliver", help="Run intake plus design, implementation and unit testing"
+    )
+    deliver.add_argument("--brd", type=Path, required=True)
+    deliver.add_argument("--meeting", type=Path, action="append", default=[])
+    deliver.add_argument("--base-dir", type=Path, default=Path.cwd())
+    deliver.add_argument("--project-id", default="PRJ-DELIVER")
+    ship = sub.add_parser(
+        "ship", help="Run delivery plus PR, review, policy gate and merge"
+    )
+    ship.add_argument("--brd", type=Path, required=True)
+    ship.add_argument("--meeting", type=Path, action="append", default=[])
+    ship.add_argument("--base-dir", type=Path, default=Path.cwd())
+    ship.add_argument("--project-id", default="PRJ-SHIP")
     args = parser.parse_args(argv)
 
     if args.command == "demo":
@@ -207,6 +276,24 @@ def main(argv: list[str] | None = None) -> int:
             run_intake(args.base_dir, args.brd, args.meeting, args.project_id)
         )
         if feature.current_state == FactoryState.KNOWLEDGE_MINED:
+            return 0
+        return 3 if feature.current_state == FactoryState.HUMAN_INPUT else 1
+    if args.command == "deliver":
+        feature = asyncio.run(
+            run_intake(
+                args.base_dir, args.brd, args.meeting, args.project_id, deliver=True
+            )
+        )
+        if feature.current_state == FactoryState.UNIT_TESTED:
+            return 0
+        return 3 if feature.current_state == FactoryState.HUMAN_INPUT else 1
+    if args.command == "ship":
+        feature = asyncio.run(
+            run_intake(
+                args.base_dir, args.brd, args.meeting, args.project_id, ship=True
+            )
+        )
+        if feature.current_state == FactoryState.MERGED:
             return 0
         return 3 if feature.current_state == FactoryState.HUMAN_INPUT else 1
     return 2
