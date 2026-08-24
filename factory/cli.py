@@ -25,6 +25,10 @@ governed promotion proposals (LEARNED).
 `sdlc-factory heal` demonstrates bounded self-healing: it injects a defect
 into the generated implementation after BUILT, lets unit testing fail, then
 diagnoses, repairs and retests within the policy budget.
+
+`sdlc-factory dashboard` serves the FastAPI observability service (REST +
+SSE) over the durable project records, and the built React dashboard when
+`ui/dist` exists (requires `pip install "sdlc-factory[observability]"`).
 """
 
 import argparse
@@ -347,6 +351,12 @@ def main(argv: list[str] | None = None) -> int:
     heal.add_argument("--meeting", type=Path, action="append", default=[])
     heal.add_argument("--base-dir", type=Path, default=Path.cwd())
     heal.add_argument("--project-id", default="PRJ-HEAL")
+    dashboard = sub.add_parser(
+        "dashboard", help="Serve the observability API and dashboard UI"
+    )
+    dashboard.add_argument("--base-dir", type=Path, default=Path.cwd())
+    dashboard.add_argument("--host", default="127.0.0.1")
+    dashboard.add_argument("--port", type=int, default=8600)
     args = parser.parse_args(argv)
 
     if args.command == "demo":
@@ -402,6 +412,16 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0 if feature.current_state == FactoryState.UNIT_TESTED else 1
+    if args.command == "dashboard":
+        try:
+            import uvicorn
+
+            from factory.observability.api import create_app
+        except ImportError:
+            print('Install observability extras: pip install "sdlc-factory[observability]"')
+            return 1
+        uvicorn.run(create_app(args.base_dir), host=args.host, port=args.port)
+        return 0
     return 2
 
 

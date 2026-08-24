@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,observability]"
       - name: Lint
         run: ruff check .
       - name: Tests
@@ -60,3 +60,17 @@ jobs:
           python -m factory.cli heal --brd examples/brd/sample-brd.md \
             --meeting examples/meetings/kickoff-transcript.md \
             --base-dir "$RUNNER_TEMP/heal"
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install UI dependencies
+        run: npm ci
+        working-directory: ui
+      - name: Build dashboard
+        run: npm run build
+        working-directory: ui
