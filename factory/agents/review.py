@@ -1,0 +1,136 @@
+"""Review agent.
+
+Owns PR_CREATED (commit the implementation on its feature branch and open a
+PR record), REVIEWED (deterministic code/security/spec/coverage review with a
+durable report) and MERGE_READY (asserts the review verdict is APPROVED).
+"""
+
+from pathlib import Path
+
+import yaml
+
+from factory.agents.base import AgentResult
+from factory.models.enums import FactoryState
+from factory.models.evidence import Evidence
+from factory.models.feature import FeatureState
+from factory.models.story import Story
+from factory.orchestrator.events import new_id
+from factory.review.review import render_review_md, run_review
+from factory.tools.filesystem import FilesystemTool
+from factory.tools.git import GitError, GitTool
+from factory.tools.pr import PrTool
+
+COMMIT_PATHS = ("workspace", "design", "testing", "quality")
+
+
+class ReviewAgent:
+    name = "review-agent"
+
+    def __init__(self, project_dir: Path) -> None:
+        self.project_dir = project_dir
+        self.fs = FilesystemTool(project_dir)
+        self.pr_tool = PrTool(project_dir)
+
+    def _stories(self) -> list[Story]:
+        if not self.fs.exists("backlog/stories.yaml"):
+            return []
+        raw = yaml.safe_load(self.fs.read_text("backlog/stories.yaml")) or []
+        return [Story.model_validate(s) for s in raw]
+
+    async def execute(self, feature: FeatureState, stage: FactoryState) -> AgentResult:
+        if stage == FactoryState.PR_CREATED:
+            return self._create_pr(feature, stage)
+        if stage == FactoryState.REVIEWED:
+            return self._review(feature, stage)
+        if stage == FactoryState.MERGE_READY:
+            return self._merge_ready(feature, stage)
+        return AgentResult(status="FAILURE", summary=f"Unsupported stage {stage.value}")
+
+    def _create_pr(self, feature: FeatureState, stage: FactoryState) -> AgentResult:
+        branch = feature.branch or f"feature/{feature.feature_id.lower()}"
+        git = GitTool(self.project_dir)
+        commit = ""
+        if git.is_repo():
+            existing = [p for p in COMMIT_PATHS if (self.project_dir / p).exists()]
+            if existing:
+                git.add(*existing)
+            if git.status_porcelain():
+                try:
+                    commit = git.commit(f"{feature.feature_id}: implementation and tests")
+                except GitError:
+                    commit = git.current_commit()
+            else:
+                commit = git.current_commit()
+
+        files = sorted(
+            str(p.relative_to(self.project_dir))
+            for p in (self.project_dir / "workspace").rglob("*")
+            if p.is_file()
+        )
+        record = self.pr_tool.create(
+            f"{feature.feature_id}: {feature.title}"[:90],
+            branch, commit=commit, files=files,
+        )
+        return AgentResult(
+            summary=f"PR #{record.number} opened for {branch}",
+            evidence=[
+                Evidence(
+                    evidence_id=new_id("EVD"), stage=stage.value, kind="pr",
+                    ref=str(self.project_dir / "prs" / f"PR-{record.number}.yaml"),
+                    summary=f"PR #{record.number} {branch} -> {record.base}",
+                    metadata={"number": record.number, "commit": commit},
+                )
+            ],
+            state_updates={"pull_request": record.number},
+        )
+
+    def _review(self, feature: FeatureState, stage: FactoryState) -> AgentResult:
+        report = run_review(self.project_dir / "workspace", self._stories())
+        report_path = self.fs.write_text(
+            "review/review-report.md", render_review_md(report, feature.feature_id)
+        )
+        findings_path = self.fs.write_text(
+            "review/review-findings.yaml",
+            yaml.safe_dump(report.model_dump(mode="json"), sort_keys=False),
+        )
+        if feature.pull_request is not None:
+            record = self.pr_tool.get(feature.pull_request)
+            record.status = report.verdict
+            self.pr_tool.update(record)
+        return AgentResult(
+            summary=f"Review verdict: {report.verdict} "
+                    f"({len(report.blocking_findings)} blocking finding(s))",
+            evidence=[
+                Evidence(
+                    evidence_id=new_id("EVD"), stage=stage.value, kind="review-report",
+                    ref=str(report_path), summary=f"Verdict {report.verdict}",
+                    metadata={"verdict": report.verdict},
+                ),
+                Evidence(
+                    evidence_id=new_id("EVD"), stage=stage.value, kind="review-findings",
+                    ref=str(findings_path),
+                    summary=f"{len(report.findings)} finding(s)",
+                ),
+            ],
+            skill="review/code-review",
+        )
+
+    def _merge_ready(self, feature: FeatureState, stage: FactoryState) -> AgentResult:
+        if not self.fs.exists("review/review-findings.yaml"):
+            return AgentResult(status="FAILURE", summary="No review report found")
+        report = yaml.safe_load(self.fs.read_text("review/review-findings.yaml"))
+        if report["verdict"] != "APPROVED":
+            return AgentResult(
+                status="FAILURE",
+                summary=f"Review verdict is {report['verdict']}; cannot enter MERGE_READY",
+            )
+        return AgentResult(
+            summary="Review approved; feature is merge-ready",
+            evidence=[
+                Evidence(
+                    evidence_id=new_id("EVD"), stage=stage.value, kind="merge-readiness",
+                    ref=str(self.project_dir / "review" / "review-findings.yaml"),
+                    summary="APPROVED review verdict",
+                )
+            ],
+        )
