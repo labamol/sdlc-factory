@@ -1,0 +1,7 @@
+version: 1
+learning_policy:
+  promotion:
+    min_successful_repairs: 2
+    require_human_approval: true
+  episodic_memory:
+    record_all_failures: true

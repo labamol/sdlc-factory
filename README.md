@@ -84,6 +84,14 @@ python -m factory.cli ship --brd examples/brd/sample-brd.md \
 # Increment 7: continue through packaging, deploy, validation and closure
 python -m factory.cli release --brd examples/brd/sample-brd.md \
   --meeting examples/meetings/kickoff-transcript.md                      # reaches STORY_COMPLETED
+
+# Increment 8: full lifecycle including episodic learning and governed promotion
+python -m factory.cli learn --brd examples/brd/sample-brd.md \
+  --meeting examples/meetings/kickoff-transcript.md                      # reaches LEARNED
+
+# Increment 8: bounded self-healing from an injected defect
+python -m factory.cli heal --brd examples/brd/sample-brd.md \
+  --meeting examples/meetings/kickoff-transcript.md                      # DIAGNOSE -> RETEST -> UNIT_TESTED
 ```
 
 The intake pipeline extracts stable `BR-xx` requirements from the BRD,
@@ -124,6 +132,18 @@ descriptor and import smoke tests, runs the packaged functional test suite
 against the deployed artifact, validates every acceptance criterion against
 its test outcome (mandatory pass percentage from `policies/deployment.yaml`),
 and closes stories and requirements in the tracker with full evidence links.
+
+Self-healing and learning (Increment 8) classify every test/build failure
+into a deterministic taxonomy (code / test / spec / data / environment /
+dependency / configuration / factory-template defect) with a stable
+normalized signature, route repairs to their owning agent — autonomous
+regeneration only for code/test/data/template defects, human escalation for
+the rest — bounded by `max_self_heal_attempts` (default 3), and record every
+episode in episodic memory. At LEARNED the factory aggregates episodes and
+named-author human feedback into a learning record and proposes governed
+promotion candidates from recurring successful repairs; candidates stay
+PROPOSED until a named human approves them per `policies/learning.yaml` —
+skills and templates are never mutated automatically.
 
 ## Implementation increments
 
