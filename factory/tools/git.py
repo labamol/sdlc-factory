@@ -29,6 +29,14 @@ class GitTool:
     def init(self, default_branch: str = "main") -> None:
         self._run("init", "-b", default_branch)
 
+    def is_repo(self) -> bool:
+        return (self.repo_dir / ".git").exists()
+
+    def configure_identity(self, name: str, email: str) -> None:
+        """Set a repository-local committer identity for factory-owned repos."""
+        self._run("config", "user.name", name)
+        self._run("config", "user.email", email)
+
     def current_commit(self) -> str:
         return self._run("rev-parse", "HEAD")
 

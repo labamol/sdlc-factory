@@ -24,3 +24,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/demo"
           cp -r policies "$RUNNER_TEMP/demo/policies"
           python -m factory.cli demo --base-dir "$RUNNER_TEMP/demo"
+      - name: Intake pipeline demo
+        run: |
+          mkdir -p "$RUNNER_TEMP/intake"
+          python -m factory.cli intake --brd examples/brd/sample-brd.md \
+            --meeting examples/meetings/kickoff-transcript.md \
+            --base-dir "$RUNNER_TEMP/intake"
