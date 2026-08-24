@@ -63,6 +63,8 @@ and human escalation condition.
 
 ## Quick start
 
+See [HOW_TO_RUN.md](HOW_TO_RUN.md) for the full step-by-step guide.
+
 ```bash
 uv venv && uv pip install -e ".[dev]"
 pytest
