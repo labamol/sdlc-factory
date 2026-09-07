@@ -103,6 +103,13 @@ export OPENAI_API_KEY=...            # FACTORY_MODEL selects the model (default 
 python -m factory.cli intake --brd examples/brd/sample-brd.md \
   --meeting examples/meetings/kickoff-transcript.md                      # OpenAI-analysed intake
 FACTORY_LLM=off python -m factory.cli intake --brd examples/brd/sample-brd.md  # force deterministic
+
+# Increment 11: ship to a real GitHub repository instead of the local PR registry
+export GITHUB_TOKEN=...               # contents + pull-requests write on the target repo
+export FACTORY_TARGET_REPO=owner/app  # FACTORY_TARGET_BRANCH selects the base (default main)
+python -m factory.cli ship --brd examples/brd/sample-brd.md \
+  --meeting examples/meetings/kickoff-transcript.md                      # real branch, PR and merge
+FACTORY_FORGE=off python -m factory.cli ship --brd examples/brd/sample-brd.md  # stay local
 ```
 
 With `OPENAI_API_KEY` set, requirements extraction and ambiguity
@@ -111,6 +118,15 @@ the `BR-xx`/`CLR-xxx`/`ASM-xxx` identifiers, artifact shapes and policy gates,
 and falls back to the deterministic parsers whenever a call fails. Per-call
 token usage and estimated cost are appended to
 `projects/<id>/requirements/llm-usage.yaml`.
+
+With `GITHUB_TOKEN` and `FACTORY_TARGET_REPO` set, `PR_CREATED` pushes the
+generated workspace to a branch on that repository and opens a real pull
+request, and `MERGED` merges it through the GitHub API — only after the same
+policy gate that governs the local path. An empty target repository is
+initialized with its base branch on the first run. Without those variables the
+factory uses its project-local PR registry, so demos and the test suite stay
+self-contained. Either way the immutable `prs/PR-<n>.yaml` record is written,
+so evidence and the dashboard are unchanged.
 
 The intake pipeline extracts stable `BR-xx` requirements from the BRD,
 classifies ambiguity (blocking / material-but-assumable / implementation

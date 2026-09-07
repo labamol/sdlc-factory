@@ -3,9 +3,18 @@
 import subprocess
 from pathlib import Path
 
+CREDENTIAL_PREFIXES = ("http.extraheader=",)
+
 
 class GitError(Exception):
     pass
+
+
+def _redact(args: tuple[str, ...]) -> str:
+    """Never echo an authorization header back into an exception or a log."""
+    return " ".join(
+        "[REDACTED]" if arg.startswith(CREDENTIAL_PREFIXES) else arg for arg in args
+    )
 
 
 class GitTool:
@@ -23,8 +32,19 @@ class GitTool:
             check=False,
         )
         if result.returncode != 0:
-            raise GitError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+            raise GitError(f"git {_redact(args)} failed: {result.stderr.strip()}")
         return result.stdout.strip()
+
+    def run_raw(self, *args: str) -> str:
+        """Escape hatch for adapters needing git flags this tool does not model."""
+        return self._run(*args)
+
+    def has_commits(self) -> bool:
+        try:
+            self._run("rev-parse", "--verify", "HEAD")
+        except GitError:
+            return False
+        return True
 
     def init(self, default_branch: str = "main") -> None:
         self._run("init", "-b", default_branch)
