@@ -63,6 +63,7 @@ from factory.orchestrator.state_machine import STATE_MACHINE
 from factory.orchestrator.store import FileStateStore
 from factory.policy.engine import PolicyEngine
 from factory.policy.quality_gate import QualityEvidence, QualityGate
+from factory.runtime.config import runtime_from_env
 from factory.tools.git import GitTool
 
 HAPPY_PATH: list[FactoryState] = [
@@ -207,7 +208,7 @@ async def run_intake(
     store = FileStateStore(projects_dir)
     events = EventBus([JsonlEventSink(project_dir / "execution" / "events.jsonl")])
     agents = build_mocked_agents(project_dir)
-    agents["requirements-agent"] = RequirementsAgent(project_dir)
+    agents["requirements-agent"] = RequirementsAgent(project_dir, runtime=runtime_from_env())
     agents["product-agent"] = ProductAgent(project_dir)
     agents["specification-agent"] = SpecificationAgent(project_dir)
     agents["knowledge-agent"] = KnowledgeAgent(project_dir)

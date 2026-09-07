@@ -96,7 +96,21 @@ python -m factory.cli heal --brd examples/brd/sample-brd.md \
 # Increment 9: observability API + dashboard over the durable records
 uv pip install -e ".[dev,observability]"
 python -m factory.cli dashboard                                          # http://127.0.0.1:8600
+
+# Increment 10: LLM reasoning (optional; deterministic fallback when unset)
+uv pip install -e ".[dev,llm]"
+export OPENAI_API_KEY=...            # FACTORY_MODEL selects the model (default gpt-4o-mini)
+python -m factory.cli intake --brd examples/brd/sample-brd.md \
+  --meeting examples/meetings/kickoff-transcript.md                      # OpenAI-analysed intake
+FACTORY_LLM=off python -m factory.cli intake --brd examples/brd/sample-brd.md  # force deterministic
 ```
+
+With `OPENAI_API_KEY` set, requirements extraction and ambiguity
+classification run through OpenAI structured outputs; the factory still owns
+the `BR-xx`/`CLR-xxx`/`ASM-xxx` identifiers, artifact shapes and policy gates,
+and falls back to the deterministic parsers whenever a call fails. Per-call
+token usage and estimated cost are appended to
+`projects/<id>/requirements/llm-usage.yaml`.
 
 The intake pipeline extracts stable `BR-xx` requirements from the BRD,
 classifies ambiguity (blocking / material-but-assumable / implementation

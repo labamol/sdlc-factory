@@ -64,9 +64,14 @@ class FileStateStore:
             return []
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
+    def _project_dirs(self) -> list[Path]:
+        if not self.projects_dir.exists():
+            return []
+        return sorted(p for p in self.projects_dir.iterdir() if p.is_dir())
+
     def transitions_for(self, feature_id: str) -> list[StateTransition]:
         records: list[StateTransition] = []
-        for project_dir in self.projects_dir.iterdir() if self.projects_dir.exists() else []:
+        for project_dir in self._project_dirs():
             for raw in self._read_jsonl(project_dir.name, "transitions.jsonl"):
                 t = StateTransition.model_validate(raw)
                 if t.feature_id == feature_id:
@@ -75,7 +80,7 @@ class FileStateStore:
 
     def executions_for(self, feature_id: str) -> list[AgentExecution]:
         records: list[AgentExecution] = []
-        for project_dir in self.projects_dir.iterdir() if self.projects_dir.exists() else []:
+        for project_dir in self._project_dirs():
             for raw in self._read_jsonl(project_dir.name, "executions.jsonl"):
                 e = AgentExecution.model_validate(raw)
                 if e.feature_id == feature_id:
