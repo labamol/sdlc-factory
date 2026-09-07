@@ -11,6 +11,8 @@ from typing import Protocol
 
 from factory.tools.pr import PullRequestRecord
 
+IGNORED_NAMES = ("__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache")
+
 
 class ForgeError(Exception):
     """Raised when a forge operation cannot be completed."""

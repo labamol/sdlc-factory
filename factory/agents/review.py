@@ -17,7 +17,7 @@ from factory.models.story import Story
 from factory.orchestrator.events import new_id
 from factory.review.review import render_review_md, run_review
 from factory.tools.filesystem import FilesystemTool
-from factory.tools.forge import Forge
+from factory.tools.forge import IGNORED_NAMES, Forge
 from factory.tools.pr import PrTool
 
 
@@ -55,7 +55,7 @@ class ReviewAgent:
         files = sorted(
             str(p.relative_to(self.project_dir))
             for p in (self.project_dir / "workspace").rglob("*")
-            if p.is_file()
+            if p.is_file() and not any(part in IGNORED_NAMES for part in p.parts)
         )
         record = self.pr_tool.create(
             f"{feature.feature_id}: {feature.title}"[:90],

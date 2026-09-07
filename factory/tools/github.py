@@ -20,7 +20,7 @@ from pathlib import Path
 
 import httpx
 
-from factory.tools.forge import ForgeError
+from factory.tools.forge import IGNORED_NAMES, ForgeError
 from factory.tools.git import GitError, GitTool
 from factory.tools.pr import PrTool, PullRequestRecord
 
@@ -200,8 +200,10 @@ def _mirror_tree(source_dir: Path, destination: Path) -> None:
     if not source_dir.exists():
         return
     for entry in source_dir.iterdir():
+        if entry.name in IGNORED_NAMES:
+            continue
         target = destination / entry.name
         if entry.is_dir():
-            shutil.copytree(entry, target)
+            shutil.copytree(entry, target, ignore=shutil.ignore_patterns(*IGNORED_NAMES))
         else:
             shutil.copy2(entry, target)
