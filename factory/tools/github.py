@@ -14,6 +14,7 @@ up in `.git/config`, in the reflog, or in an error message.
 
 import base64
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -29,6 +30,15 @@ DEFAULT_BASE_BRANCH = "main"
 COMMITTER_NAME = "sdlc-factory"
 COMMITTER_EMAIL = "factory@localhost"
 API_VERSION = "2022-11-28"
+
+# The adapter authenticates with its own token, so ambient git configuration --
+# credential helpers, and `insteadOf` rules that reroute github.com through a
+# proxy -- must not apply to its invocations.
+ISOLATED_GIT_ENV = {
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_SYSTEM": os.devnull,
+    "GIT_TERMINAL_PROMPT": "0",
+}
 
 
 class GitHubForge:
@@ -73,10 +83,10 @@ class GitHubForge:
         return f"{self._git_base_url}/{self.repo}.git"
 
     def _ensure_checkout(self) -> GitTool:
-        git = GitTool(self.checkout_dir)
+        git = GitTool(self.checkout_dir, env=ISOLATED_GIT_ENV)
         if not git.is_repo():
             self.checkout_dir.mkdir(parents=True, exist_ok=True)
-            GitTool(self.checkout_dir.parent).run_raw(
+            GitTool(self.checkout_dir.parent, env=ISOLATED_GIT_ENV).run_raw(
                 *self._auth_args(), "clone", self._clone_url(), self.checkout_dir.name
             )
             git.configure_identity(COMMITTER_NAME, COMMITTER_EMAIL)

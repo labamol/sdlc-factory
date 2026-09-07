@@ -1,5 +1,6 @@
 """Deterministic Git tool wrapping the git CLI for a single repository."""
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -20,8 +21,9 @@ def _redact(args: tuple[str, ...]) -> str:
 class GitTool:
     name = "git"
 
-    def __init__(self, repo_dir: Path) -> None:
+    def __init__(self, repo_dir: Path, env: dict[str, str] | None = None) -> None:
         self.repo_dir = repo_dir
+        self.env = env
 
     def _run(self, *args: str) -> str:
         result = subprocess.run(
@@ -30,6 +32,7 @@ class GitTool:
             capture_output=True,
             text=True,
             check=False,
+            env={**os.environ, **self.env} if self.env else None,
         )
         if result.returncode != 0:
             raise GitError(f"git {_redact(args)} failed: {result.stderr.strip()}")
