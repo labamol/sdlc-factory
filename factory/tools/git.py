@@ -1,18 +1,29 @@
 """Deterministic Git tool wrapping the git CLI for a single repository."""
 
+import os
 import subprocess
 from pathlib import Path
+
+CREDENTIAL_PREFIXES = ("http.extraheader=",)
 
 
 class GitError(Exception):
     pass
 
 
+def _redact(args: tuple[str, ...]) -> str:
+    """Never echo an authorization header back into an exception or a log."""
+    return " ".join(
+        "[REDACTED]" if arg.startswith(CREDENTIAL_PREFIXES) else arg for arg in args
+    )
+
+
 class GitTool:
     name = "git"
 
-    def __init__(self, repo_dir: Path) -> None:
+    def __init__(self, repo_dir: Path, env: dict[str, str] | None = None) -> None:
         self.repo_dir = repo_dir
+        self.env = env
 
     def _run(self, *args: str) -> str:
         result = subprocess.run(
@@ -21,10 +32,22 @@ class GitTool:
             capture_output=True,
             text=True,
             check=False,
+            env={**os.environ, **self.env} if self.env else None,
         )
         if result.returncode != 0:
-            raise GitError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+            raise GitError(f"git {_redact(args)} failed: {result.stderr.strip()}")
         return result.stdout.strip()
+
+    def run_raw(self, *args: str) -> str:
+        """Escape hatch for adapters needing git flags this tool does not model."""
+        return self._run(*args)
+
+    def has_commits(self) -> bool:
+        try:
+            self._run("rev-parse", "--verify", "HEAD")
+        except GitError:
+            return False
+        return True
 
     def init(self, default_branch: str = "main") -> None:
         self._run("init", "-b", default_branch)
