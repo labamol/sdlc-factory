@@ -21,7 +21,9 @@ from factory.models.feature import FeatureState
 from factory.models.story import Story
 from factory.orchestrator.events import new_id
 from factory.tools.filesystem import FilesystemTool
+from factory.tools.notify import Notifier, NotifyError
 from factory.tools.shell import ShellTool
+from factory.tools.tracker import Tracker, TrackerError, TrackerIssue
 
 FUNCTIONAL_REPORT = "validation/functional-report.txt"
 VALIDATION_REPORT = "validation/validation-report.yaml"
@@ -32,12 +34,20 @@ class ValidationAgent:
     name = "validation-agent"
 
     def __init__(
-        self, project_dir: Path, policies_dir: Path, *, environment: str = "local"
+        self,
+        project_dir: Path,
+        policies_dir: Path,
+        *,
+        environment: str = "local",
+        tracker: Tracker | None = None,
+        notifier: Notifier | None = None,
     ) -> None:
         self.project_dir = project_dir
         self.policies_dir = policies_dir
         self.fs = FilesystemTool(project_dir)
         self.environment = environment
+        self.tracker = tracker
+        self.notifier = notifier
 
     def _stories(self) -> list[Story]:
         if not self.fs.exists("backlog/stories.yaml"):
@@ -168,18 +178,77 @@ class ValidationAgent:
                 "functional_report": FUNCTIONAL_REPORT,
             },
         }
+        issues, tracker_error = self._close_in_tracker(feature, stories)
+        if issues:
+            for entry, issue in zip(completion["stories"], issues, strict=False):
+                entry["issue_key"] = issue.key
+                entry["issue_url"] = issue.url
+        if tracker_error:
+            completion["tracker_error"] = tracker_error
         path = self.fs.write_text(
             "tracker/completion.yaml", yaml.safe_dump(completion, sort_keys=False)
         )
+        evidence = [
+            Evidence(
+                evidence_id=new_id("EVD"), stage=stage.value,
+                kind="tracker-completion", ref=str(path),
+                summary=f"{len(stories)} stories DONE",
+            )
+        ]
+        notified = self._notify(
+            stage,
+            f"Story completion — {feature.feature_id}",
+            f"{len(stories)} story(ies) and {len(feature.requirements)} "
+            "requirement(s) closed after AC validation PASS.",
+            {"Feature": feature.feature_id,
+             "Issues": ", ".join(i.key for i in issues) or "none",
+             "Evidence": str(path)},
+        )
+        if notified is not None:
+            evidence.append(notified)
         return AgentResult(
             summary=f"Closed {len(stories)} story(ies) and "
                     f"{len(feature.requirements)} requirement(s) in tracker",
-            evidence=[
-                Evidence(
-                    evidence_id=new_id("EVD"), stage=stage.value,
-                    kind="tracker-completion", ref=str(path),
-                    summary=f"{len(stories)} stories DONE",
-                )
-            ],
+            evidence=evidence,
             skill="tracking/closure",
+        )
+
+    def _close_in_tracker(
+        self, feature: FeatureState, stories: list[Story]
+    ) -> tuple[list[TrackerIssue], str]:
+        """Open and immediately close one issue per validated story."""
+        if self.tracker is None:
+            return [], ""
+        issues: list[TrackerIssue] = []
+        try:
+            for story in stories:
+                acs = ", ".join(ac.ac_id for ac in story.acceptance_criteria)
+                issue = self.tracker.open_issue(
+                    f"{story.story_id}: {story.title}",
+                    f"Delivered by the SDLC factory for {feature.feature_id}.\n"
+                    f"Acceptance criteria: {acs}",
+                )
+                issues.append(
+                    self.tracker.complete_issue(
+                        issue,
+                        f"Acceptance criteria validated ({acs}). "
+                        f"Evidence: {VALIDATION_REPORT}",
+                    )
+                )
+        except TrackerError as exc:
+            return issues, str(exc)
+        return issues, ""
+
+    def _notify(
+        self, stage: FactoryState, title: str, text: str, facts: dict[str, str]
+    ) -> Evidence | None:
+        if self.notifier is None:
+            return None
+        try:
+            ref = self.notifier.send(title, text, facts)
+        except NotifyError as exc:
+            ref = f"delivery failed: {exc}"
+        return Evidence(
+            evidence_id=new_id("EVD"), stage=stage.value, kind="notification",
+            ref=ref, summary=f"{title} notified via {self.notifier.name}",
         )

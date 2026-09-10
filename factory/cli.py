@@ -66,6 +66,7 @@ from factory.policy.quality_gate import QualityEvidence, QualityGate
 from factory.runtime.config import runtime_from_env
 from factory.tools.forge_config import forge_from_env, target_repo
 from factory.tools.git import GitTool
+from factory.tools.integrations_config import notifier_from_env, tracker_from_env
 from factory.tools.pr import PrTool
 
 HAPPY_PATH: list[FactoryState] = [
@@ -218,12 +219,16 @@ async def run_intake(
     agents["test-agent"] = TestEngineeringAgent(project_dir)
     agents["implementation-agent"] = ImplementationAgent(project_dir)
     forge = forge_from_env(project_dir)
+    tracker = tracker_from_env(project_dir)
+    notifier = notifier_from_env(project_dir)
     agents["review-agent"] = ReviewAgent(project_dir, forge=forge)
     agents["orchestrator"] = OrchestratorGateAgent(
-        project_dir, _policies_dir(base_dir), forge=forge
+        project_dir, _policies_dir(base_dir), forge=forge, notifier=notifier
     )
     agents["release-agent"] = ReleaseAgent(project_dir)
-    agents["validation-agent"] = ValidationAgent(project_dir, _policies_dir(base_dir))
+    agents["validation-agent"] = ValidationAgent(
+        project_dir, _policies_dir(base_dir), tracker=tracker, notifier=notifier
+    )
     agents["self-heal-agent"] = SelfHealAgent(project_dir, _policies_dir(base_dir))
     agents["learning-agent"] = LearningAgent(project_dir, _policies_dir(base_dir))
     engine = OrchestratorEngine(
@@ -307,6 +312,8 @@ async def run_intake(
     if release or learn:
         print(f"Deployed to: {feature.deployment_environment}")
         print(f"Functional tests: {feature.functional_test_status.value}")
+        print(f"Tracker: {tracker.name}")
+    print(f"Notifications: {notifier.name}")
     if heal_demo:
         print(f"Unit tests after healing: {feature.unit_test_status.value}")
     for transition in store.transitions_for(feature.feature_id):

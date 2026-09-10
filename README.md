@@ -110,6 +110,15 @@ export FACTORY_TARGET_REPO=owner/app  # FACTORY_TARGET_BRANCH selects the base (
 python -m factory.cli ship --brd examples/brd/sample-brd.md \
   --meeting examples/meetings/kickoff-transcript.md                      # real branch, PR and merge
 FACTORY_FORGE=off python -m factory.cli ship --brd examples/brd/sample-brd.md  # stay local
+
+# Increment 12: Jira issues and Teams notifications
+export JIRA_SITE_URL=https://acme.atlassian.net JIRA_EMAIL=you@acme.io
+export JIRA_API_TOKEN=... JIRA_PROJECT_KEY=SDLC   # JIRA_ISSUE_TYPE defaults to Task
+export TEAMS_WEBHOOK_URL=...                      # incoming webhook / Workflows URL
+python -m factory.cli release --brd examples/brd/sample-brd.md \
+  --meeting examples/meetings/kickoff-transcript.md   # real Jira issues + Teams messages
+FACTORY_TRACKER=off FACTORY_NOTIFY=off python -m factory.cli release \
+  --brd examples/brd/sample-brd.md                    # stay local
 ```
 
 With `OPENAI_API_KEY` set, requirements extraction and ambiguity
@@ -127,6 +136,15 @@ initialized with its base branch on the first run. Without those variables the
 factory uses its project-local PR registry, so demos and the test suite stay
 self-contained. Either way the immutable `prs/PR-<n>.yaml` record is written,
 so evidence and the dashboard are unchanged.
+
+With Jira configured, `STORY_COMPLETED` opens one issue per validated story
+and transitions it to a done-like status with the acceptance-criteria evidence
+as a comment; the issue keys and URLs land in `tracker/completion.yaml`. With
+`TEAMS_WEBHOOK_URL` set, the factory posts to Teams when it pauses for a
+blocking clarification, when the merge policy gate blocks a merge, when a merge
+lands, and when stories close. Both fall back to project-local records
+(`tracker/issues.yaml`, `notifications/outbox.yaml`), and a delivery failure is
+recorded as evidence rather than failing the lifecycle.
 
 The intake pipeline extracts stable `BR-xx` requirements from the BRD,
 classifies ambiguity (blocking / material-but-assumable / implementation

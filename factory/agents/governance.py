@@ -20,6 +20,7 @@ from factory.policy.engine import PolicyCheck, PolicyEngine
 from factory.policy.quality_gate import QualityEvidence, QualityGate
 from factory.tools.filesystem import FilesystemTool
 from factory.tools.forge import Forge
+from factory.tools.notify import Notifier, NotifyError
 from factory.tools.pr import PrTool
 
 
@@ -31,13 +32,32 @@ class OrchestratorGateAgent:
     name = "orchestrator"
 
     def __init__(
-        self, project_dir: Path, policies_dir: Path, forge: Forge | None = None
+        self,
+        project_dir: Path,
+        policies_dir: Path,
+        forge: Forge | None = None,
+        notifier: Notifier | None = None,
     ) -> None:
         self.project_dir = project_dir
         self.fs = FilesystemTool(project_dir)
         self.policy_engine = PolicyEngine(policies_dir)
-        self.hitl = HitlGateAgent(project_dir)
+        self.hitl = HitlGateAgent(project_dir, notifier=notifier)
         self.forge = forge or PrTool(project_dir)
+        self.notifier = notifier
+
+    def _notify(
+        self, stage: FactoryState, title: str, text: str, facts: dict[str, str]
+    ) -> Evidence | None:
+        if self.notifier is None:
+            return None
+        try:
+            ref = self.notifier.send(title, text, facts)
+        except NotifyError as exc:
+            ref = f"delivery failed: {exc}"
+        return Evidence(
+            evidence_id=new_id("EVD"), stage=stage.value, kind="notification",
+            ref=ref, summary=f"{title} notified via {self.notifier.name}",
+        )
 
     async def execute(self, feature: FeatureState, stage: FactoryState) -> AgentResult:
         if stage == FactoryState.HUMAN_INPUT:
@@ -139,6 +159,16 @@ class OrchestratorGateAgent:
         ]
         if decision != GateDecision.PASS:
             failed = [c.name for c in all_checks if not c.passed]
+            notified = self._notify(
+                stage,
+                f"Merge blocked by policy gate — {feature.feature_id}",
+                "The merge policy gate returned FAIL. Failing checks: "
+                + ", ".join(failed),
+                {"Feature": feature.feature_id, "Decision": decision.value,
+                 "Evidence": str(decision_path)},
+            )
+            if notified is not None:
+                result_evidence.append(notified)
             return AgentResult(
                 status="FAILURE",
                 summary=f"Policy gate FAIL: {', '.join(failed)}",
@@ -172,14 +202,24 @@ class OrchestratorGateAgent:
             )
             merged_commit = record.merged_commit
             branch = branch or record.branch
+        evidence = [
+            Evidence(
+                evidence_id=new_id("EVD"), stage=stage.value, kind="merge",
+                ref=str(self.project_dir / "governance" / "merge-decision.yaml"),
+                summary=f"Merged {branch} -> main ({merged_commit[:12]})",
+                metadata={"merged_commit": merged_commit},
+            )
+        ]
+        notified = self._notify(
+            stage,
+            f"Merged {feature.feature_id}",
+            f"`{branch}` was merged after a PASS policy gate decision.",
+            {"Feature": feature.feature_id, "Branch": branch,
+             "Commit": merged_commit[:12]},
+        )
+        if notified is not None:
+            evidence.append(notified)
         return AgentResult(
             summary=f"Merged {branch} at {merged_commit[:12]}",
-            evidence=[
-                Evidence(
-                    evidence_id=new_id("EVD"), stage=stage.value, kind="merge",
-                    ref=str(self.project_dir / "governance" / "merge-decision.yaml"),
-                    summary=f"Merged {branch} -> main ({merged_commit[:12]})",
-                    metadata={"merged_commit": merged_commit},
-                )
-            ],
+            evidence=evidence,
         )
