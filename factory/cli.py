@@ -64,7 +64,9 @@ from factory.orchestrator.store import FileStateStore
 from factory.policy.engine import PolicyEngine
 from factory.policy.quality_gate import QualityEvidence, QualityGate
 from factory.runtime.config import runtime_from_env
+from factory.tools.forge_config import forge_from_env, target_repo
 from factory.tools.git import GitTool
+from factory.tools.pr import PrTool
 
 HAPPY_PATH: list[FactoryState] = [
     FactoryState.INTAKE,
@@ -215,8 +217,11 @@ async def run_intake(
     agents["design-agent"] = DesignAgent(project_dir)
     agents["test-agent"] = TestEngineeringAgent(project_dir)
     agents["implementation-agent"] = ImplementationAgent(project_dir)
-    agents["review-agent"] = ReviewAgent(project_dir)
-    agents["orchestrator"] = OrchestratorGateAgent(project_dir, _policies_dir(base_dir))
+    forge = forge_from_env(project_dir)
+    agents["review-agent"] = ReviewAgent(project_dir, forge=forge)
+    agents["orchestrator"] = OrchestratorGateAgent(
+        project_dir, _policies_dir(base_dir), forge=forge
+    )
     agents["release-agent"] = ReleaseAgent(project_dir)
     agents["validation-agent"] = ValidationAgent(project_dir, _policies_dir(base_dir))
     agents["self-heal-agent"] = SelfHealAgent(project_dir, _policies_dir(base_dir))
@@ -292,7 +297,12 @@ async def run_intake(
         print(f"Branch: {feature.branch}")
         print(f"Unit tests: {feature.unit_test_status.value}")
     if ship or release:
-        print(f"Pull request: #{feature.pull_request}")
+        print(f"Pull request: #{feature.pull_request} ({forge.name})")
+        if isinstance(forge, PrTool):
+            print("Forge: project-local PR registry "
+                  "(set GITHUB_TOKEN + FACTORY_TARGET_REPO to use GitHub)")
+        else:
+            print(f"Forge: github.com/{target_repo()}")
         print(f"Coverage: {feature.coverage}")
     if release or learn:
         print(f"Deployed to: {feature.deployment_environment}")

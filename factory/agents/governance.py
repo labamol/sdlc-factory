@@ -19,7 +19,7 @@ from factory.orchestrator.events import new_id
 from factory.policy.engine import PolicyCheck, PolicyEngine
 from factory.policy.quality_gate import QualityEvidence, QualityGate
 from factory.tools.filesystem import FilesystemTool
-from factory.tools.git import GitTool
+from factory.tools.forge import Forge
 from factory.tools.pr import PrTool
 
 
@@ -30,11 +30,14 @@ def _percent(text: str) -> float:
 class OrchestratorGateAgent:
     name = "orchestrator"
 
-    def __init__(self, project_dir: Path, policies_dir: Path) -> None:
+    def __init__(
+        self, project_dir: Path, policies_dir: Path, forge: Forge | None = None
+    ) -> None:
         self.project_dir = project_dir
         self.fs = FilesystemTool(project_dir)
         self.policy_engine = PolicyEngine(policies_dir)
         self.hitl = HitlGateAgent(project_dir)
+        self.forge = forge or PrTool(project_dir)
 
     async def execute(self, feature: FeatureState, stage: FactoryState) -> AgentResult:
         if stage == FactoryState.HUMAN_INPUT:
@@ -156,22 +159,19 @@ class OrchestratorGateAgent:
                 summary="Cannot merge: policy gate decision is not PASS",
             )
         branch = feature.branch or ""
-        git = GitTool(self.project_dir)
         merged_commit = ""
-        if git.is_repo() and branch:
+        if feature.pull_request is not None:
             base = self.policy_engine.load("merge").get("merge_policy", {}).get(
                 "protected_branches", ["main"]
             )[0]
-            git.checkout(base)
-            merged_commit = git.merge(
-                branch, f"Merge {branch}: {feature.feature_id} approved by policy gate"
+            record = self.forge.get(feature.pull_request)
+            record.base = record.base or base
+            record = self.forge.merge(
+                record,
+                message=f"Merge {branch}: {feature.feature_id} approved by policy gate",
             )
-        if feature.pull_request is not None:
-            pr_tool = PrTool(self.project_dir)
-            record = pr_tool.get(feature.pull_request)
-            record.status = "MERGED"
-            record.merged_commit = merged_commit
-            pr_tool.update(record)
+            merged_commit = record.merged_commit
+            branch = branch or record.branch
         return AgentResult(
             summary=f"Merged {branch} at {merged_commit[:12]}",
             evidence=[
