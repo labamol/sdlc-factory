@@ -10,3 +10,6 @@ build/
 .coverage
 coverage.xml
 projects/*/execution/
+projects/*/forge/
+ui/node_modules/
+ui/dist/

@@ -1,0 +1,7 @@
+version: 1
+merge_policy:
+  require_quality_gate: true
+  require_review: true
+  require_spec_compliance_review: true
+  allow_autonomous_merge: true
+  protected_branches: [main]

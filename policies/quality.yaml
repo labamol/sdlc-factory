@@ -1,0 +1,17 @@
+version: 1
+quality_gate:
+  build:
+    must_pass: true
+  unit_tests:
+    must_pass: true
+  integration_tests:
+    must_pass: true
+  coverage:
+    minimum: 80
+  spec_compliance:
+    minimum: 95
+  critical_security_findings:
+    maximum: 0
+  acceptance_criteria:
+    mandatory_pass_percentage: 100
+  max_self_heal_attempts: 3

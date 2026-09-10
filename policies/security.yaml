@@ -1,0 +1,7 @@
+version: 1
+security_policy:
+  critical_findings_maximum: 0
+  high_findings_maximum: 0
+  dependency_scan_required: true
+  secret_scan_required: true
+  mask_secrets_in_telemetry: true
